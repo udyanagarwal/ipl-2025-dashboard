@@ -292,6 +292,117 @@ else:
         else:
             st.warning("No bowling data for the selected team.")
 
+    # ── Phase-wise Analysis ──────────────────────────────────────────────
+    st.markdown("<hr />", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='color:{IPL_ACCENT};'>📅 Phase-wise Analysis — {team_lbl}</h2>", unsafe_allow_html=True)
+
+    PHASE_ORDER = ["Group Stage", "Qualifier 1", "Eliminator", "Qualifier 2", "Final"]
+    phase_data = []
+    for phase in PHASE_ORDER:
+        p = filtered[filtered["phase"] == phase] if "phase" in filtered.columns else pd.DataFrame()
+        if p.empty:
+            continue
+        runs  = int(p["runs_off_bat"].sum())
+        balls = len(p)
+        wkts  = int(p["is_wicket"].sum())
+        rr    = round((runs / balls) * 6, 2) if balls > 0 else 0
+        phase_data.append({"Phase": phase, "Runs": runs, "Wickets": wkts, "Balls": balls, "Run Rate": rr})
+
+    if phase_data:
+        phase_df = pd.DataFrame(phase_data)
+        metric_choice = st.selectbox("Select metric for phase chart", ["Runs", "Wickets", "Run Rate"], key="phase_metric")
+        fig_phase = px.bar(
+            phase_df, x="Phase", y=metric_choice, text=metric_choice,
+            color=metric_choice, color_continuous_scale="Oranges"
+        )
+        fig_phase.update_traces(textposition="outside")
+        fig_phase.update_layout(
+            plot_bgcolor=DARK_BG, paper_bgcolor=DARK_BG,
+            font_color=TEXT_COLOR, margin=dict(t=40, b=40, l=40, r=40),
+            coloraxis_showscale=False
+        )
+        st.plotly_chart(fig_phase, use_container_width=True)
+        with st.expander("Phase-wise Summary Table"):
+            st.dataframe(phase_df.set_index("Phase"), use_container_width=True)
+    else:
+        st.info("No phase data available for the selected team.")
+
+    # ── Over-wise (Powerplay / Middle / Death) Analysis ───────────────────
+    st.markdown("<hr />", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='color:{IPL_ACCENT};'>⚡ Powerplay / Middle / Death Analysis — {team_lbl}</h2>",
+                unsafe_allow_html=True)
+
+    if "over" in filtered.columns:
+        df_overs = filtered.copy()
+        df_overs["over_int"] = df_overs["over"].astype(str).str.split(".").str[0].astype(int)
+
+        def phase_label(o):
+            if o <= 5:   return "Powerplay (0-5)"
+            elif o <= 15: return "Middle (6-15)"
+            else:         return "Death (16-20)"
+
+        df_overs["over_phase"] = df_overs["over_int"].apply(phase_label)
+        OVER_ORDER = ["Powerplay (0-5)", "Middle (6-15)", "Death (16-20)"]
+        OVER_COLORS = {"Powerplay (0-5)": "#2962ff", "Middle (6-15)": "#FFB300", "Death (16-20)": "#e53935"}
+
+        over_summary = []
+        for op in OVER_ORDER:
+            op_df = df_overs[df_overs["over_phase"] == op]
+            if op_df.empty:
+                continue
+            runs  = int(op_df["runs_off_bat"].sum())
+            balls = len(op_df)
+            wkts  = int(op_df["is_wicket"].sum())
+            rr    = round((runs / balls) * 6, 2) if balls > 0 else 0
+            over_summary.append({"Phase": op, "Runs": runs, "Wickets": wkts, "Balls": balls, "Run Rate": rr})
+
+        if over_summary:
+            over_df = pd.DataFrame(over_summary)
+
+            col1, col2, col3 = st.columns(3)
+            for i, row in over_df.iterrows():
+                col = [col1, col2, col3][i]
+                col.markdown(f"""
+                    <div class="stat-card" style="background:{CARD_BG}; border-top: 4px solid {list(OVER_COLORS.values())[i]};">
+                        <div style="font-size:1rem; font-weight:800; color:{list(OVER_COLORS.values())[i]};">{row['Phase']}</div>
+                        <div style="margin-top:0.5rem; font-size:0.95rem;">🏏 Runs: <b>{row['Runs']}</b></div>
+                        <div style="font-size:0.95rem;">⚡ Wickets: <b>{row['Wickets']}</b></div>
+                        <div style="font-size:0.95rem;">📈 Run Rate: <b>{row['Run Rate']}</b></div>
+                        <div style="font-size:0.95rem;">🎯 Balls: <b>{row['Balls']}</b></div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # Run rate comparison chart
+            st.markdown(f"<h3 style='color:{IPL_ACCENT}; margin-top:1rem;'>Run Rate by Over Phase</h3>",
+                        unsafe_allow_html=True)
+            fig_over = px.bar(
+                over_df, x="Phase", y="Run Rate", text="Run Rate",
+                color="Phase", color_discrete_map=OVER_COLORS
+            )
+            fig_over.update_traces(textposition="outside")
+            fig_over.update_layout(
+                plot_bgcolor=DARK_BG, paper_bgcolor=DARK_BG,
+                font_color=TEXT_COLOR, margin=dict(t=40, b=40, l=40, r=40),
+                showlegend=False
+            )
+            st.plotly_chart(fig_over, use_container_width=True)
+
+            # Ball-by-ball run scoring per over (line chart)
+            st.markdown(f"<h3 style='color:{IPL_ACCENT}; margin-top:0.5rem;'>Runs Per Over (All Overs)</h3>",
+                        unsafe_allow_html=True)
+            runs_per_over = df_overs.groupby("over_int")["runs_off_bat"].sum().reset_index()
+            runs_per_over.columns = ["Over", "Runs"]
+            fig_line = px.line(
+                runs_per_over, x="Over", y="Runs",
+                markers=True, line_shape="spline",
+                color_discrete_sequence=[IPL_ACCENT]
+            )
+            fig_line.update_layout(
+                plot_bgcolor=DARK_BG, paper_bgcolor=DARK_BG,
+                font_color=TEXT_COLOR, margin=dict(t=40, b=40, l=40, r=40)
+            )
+            st.plotly_chart(fig_line, use_container_width=True)
+
     st.markdown("<hr />", unsafe_allow_html=True)
     with st.expander("Preview Data"):
         st.dataframe(filtered.head(30), use_container_width=True)
