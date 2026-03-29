@@ -161,14 +161,23 @@ if selected_player != "All Players":
     fours_total  = int(batting_df[batting_df["runs_off_bat"] == 4].shape[0])
     sixes_total  = int(batting_df[batting_df["runs_off_bat"] == 6].shape[0])
 
+    dismissals   = int(batting_df["is_wicket"].sum())
+    bat_avg      = round(runs_total / dismissals, 2) if dismissals > 0 else "∞"
+    dot_bat      = int(batting_df[batting_df["runs_off_bat"] == 0].shape[0])
+    dot_bat_pct  = round((dot_bat / balls_total) * 100, 1) if balls_total > 0 else 0
+
     col1, col2, col3 = st.columns(3)
     stat_card("Total Runs",    runs_total,  "🏏", BAT_COLOR, col1)
     stat_card("Balls Faced",   balls_total, "🎯", BAT_COLOR, col2)
     stat_card("Strike Rate",   sr_total,    "📈", BAT_COLOR, col3)
     col4, col5, col6 = st.columns(3)
-    stat_card("Fours",         fours_total,  "4️⃣", BAT_COLOR, col4)
-    stat_card("Sixes",         sixes_total,  "6️⃣", BAT_COLOR, col5)
-    stat_card("Matches Batted",matches_bat,  "📋", BAT_COLOR, col6)
+    stat_card("Batting Avg",   bat_avg,     "📊", BAT_COLOR, col4)
+    stat_card("Fours",         fours_total, "4️⃣", BAT_COLOR, col5)
+    stat_card("Sixes",         sixes_total, "6️⃣", BAT_COLOR, col6)
+    col7b, col8b, col9b = st.columns(3)
+    stat_card("Dot Balls Faced", dot_bat,     "🔴", BAT_COLOR, col7b)
+    stat_card("Dot Ball %",      f"{dot_bat_pct}%", "🎯", BAT_COLOR, col8b)
+    stat_card("Matches Batted",  matches_bat, "📋", BAT_COLOR, col9b)
 
     # ── Overall Bowling Stats ────────────────────────────────────────────
     st.markdown(f"<h2 style='color:{IPL_ACCENT};'>⚡ Bowling Stats</h2>", unsafe_allow_html=True)
@@ -178,13 +187,22 @@ if selected_player != "All Players":
     matches_bowl = bowling_df["match_id"].nunique() if "match_id" in bowling_df else "-"
     econ_total   = round((runs_con_tot / bballs_total) * 6, 2) if bballs_total > 0 else 0
 
+    dots_total   = int(bowling_df[bowling_df["runs_off_bat"] == 0].shape[0])
+    dot_pct      = round((dots_total / bballs_total) * 100, 1) if bballs_total > 0 else 0
+    bowl_avg     = round(runs_con_tot / wkts_total, 2) if wkts_total > 0 else "∞"
+    sr_bowl      = round(bballs_total / wkts_total, 2) if wkts_total > 0 else "∞"
+
     col7, col8, col9 = st.columns(3)
     stat_card("Total Wickets",  wkts_total,    "⚡", BOWL_COLOR, col7)
     stat_card("Balls Bowled",   bballs_total,  "🟠", BOWL_COLOR, col8)
     stat_card("Runs Conceded",  runs_con_tot,  "💸", BOWL_COLOR, col9)
-    col10, col11, _ = st.columns(3)
+    col10, col11, col12 = st.columns(3)
     stat_card("Economy",        econ_total,    "📉", BOWL_COLOR, col10)
-    stat_card("Matches Bowled", matches_bowl,  "📋", BOWL_COLOR, col11)
+    stat_card("Bowling Avg",    bowl_avg,      "📊", BOWL_COLOR, col11)
+    stat_card("Bowling SR",     sr_bowl,       "🎯", BOWL_COLOR, col12)
+    col13, col14, _ = st.columns(3)
+    stat_card("Dot Balls",      dots_total,    "🔴", BOWL_COLOR, col13)
+    stat_card("Dot Ball %",     f"{dot_pct}%", "⭕", BOWL_COLOR, col14)
 
     # ── vs Opponent ──────────────────────────────────────────────────────
     if selected_opponent != "Select opponent...":
