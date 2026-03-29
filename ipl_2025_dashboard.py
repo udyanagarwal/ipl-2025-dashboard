@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+import numpy as np
 
 # ─────────────────────────── THEME CONSTANTS ────────────────────────────
 IPL_ACCENT  = "#FFB300"
@@ -424,3 +428,130 @@ else:
     st.markdown("<hr />", unsafe_allow_html=True)
     with st.expander("Preview Data"):
         st.dataframe(filtered.head(30), use_container_width=True)
+
+# ═══════════════════════ ML PREDICTOR SECTION ════════════════════════════
+st.markdown("<hr />", unsafe_allow_html=True)
+st.markdown(f"<h2 style='color:{IPL_ACCENT};'>🤖 Next Match Score Predictor (ML)</h2>", unsafe_allow_html=True)
+st.markdown("<p style='color:#aaa;'>Uses Linear Regression on match-by-match runs to predict a batter's likely score in the next match.</p>", unsafe_allow_html=True)
+
+all_batters = sorted(df["striker"].dropna().unique())
+ml_player   = st.selectbox("Select Batter for Prediction", ["Select a batter..."] + all_batters, key="ml_player")
+
+if ml_player != "Select a batter...":
+    # Build per-match runs
+    player_matches = (
+        df[df["striker"] == ml_player]
+        .groupby(["match_id", "match_no"])["runs_off_bat"]
+        .sum()
+        .reset_index()
+        .sort_values("match_no")
+        .reset_index(drop=True)
+    )
+    player_matches.columns = ["match_id", "match_no", "runs"]
+
+    if len(player_matches) < 3:
+        st.warning(f"Not enough match data for {ml_player} to build a prediction model (need at least 3 matches).")
+    else:
+        # Rolling average (window=3)
+        player_matches["rolling_avg"] = player_matches["runs"].rolling(window=3, min_periods=1).mean().round(2)
+
+        # Train Linear Regression on match number → runs
+        X = player_matches["match_no"].values.reshape(-1, 1)
+        y = player_matches["runs"].values
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Predict next match
+        next_match_no = int(player_matches["match_no"].max()) + 1
+        predicted_runs = max(0, round(model.predict([[next_match_no]])[0], 1))
+
+        # RMSE on training data
+        y_pred_train = model.predict(X)
+        rmse = round(np.sqrt(mean_squared_error(y, y_pred_train)), 2)
+
+        # ── Prediction cards ────────────────────────────────────────────
+        col1, col2, col3 = st.columns(3)
+        col1.markdown(f"""
+            <div class="stat-card" style="background:{CARD_BG}; border-top:4px solid {IPL_ACCENT};">
+                <div style="font-size:1.8rem;">🏏</div>
+                <div style="font-size:1rem; font-weight:800; color:{IPL_ACCENT};">Predicted Runs</div>
+                <div style="font-size:2rem; font-weight:700; margin-top:0.4rem; color:{IPL_BLUE};">{predicted_runs}</div>
+                <div style="font-size:0.85rem; color:#888;">Next Match (#{next_match_no})</div>
+            </div>
+        """, unsafe_allow_html=True)
+        col2.markdown(f"""
+            <div class="stat-card" style="background:{CARD_BG}; border-top:4px solid #2962ff;">
+                <div style="font-size:1.8rem;">📊</div>
+                <div style="font-size:1rem; font-weight:800; color:#2962ff;">Season Avg</div>
+                <div style="font-size:2rem; font-weight:700; margin-top:0.4rem; color:{IPL_BLUE};">{round(player_matches['runs'].mean(), 1)}</div>
+                <div style="font-size:0.85rem; color:#888;">runs per match</div>
+            </div>
+        """, unsafe_allow_html=True)
+        col3.markdown(f"""
+            <div class="stat-card" style="background:{CARD_BG}; border-top:4px solid #e53935;">
+                <div style="font-size:1.8rem;">📉</div>
+                <div style="font-size:1rem; font-weight:800; color:#e53935;">Model RMSE</div>
+                <div style="font-size:2rem; font-weight:700; margin-top:0.4rem; color:{IPL_BLUE};">{rmse}</div>
+                <div style="font-size:0.85rem; color:#888;">lower = more accurate</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # ── Match-by-match chart with rolling avg + prediction ───────────
+        st.markdown(f"<h3 style='color:{IPL_ACCENT}; margin-top:1.5rem;'>Match-by-Match Performance — {ml_player}</h3>", unsafe_allow_html=True)
+
+        fig_ml = go.Figure()
+
+        # Actual runs bars
+        fig_ml.add_trace(go.Bar(
+            x=player_matches["match_no"],
+            y=player_matches["runs"],
+            name="Actual Runs",
+            marker_color=IPL_ACCENT,
+            opacity=0.8,
+        ))
+
+        # Rolling average line
+        fig_ml.add_trace(go.Scatter(
+            x=player_matches["match_no"],
+            y=player_matches["rolling_avg"],
+            name="3-Match Rolling Avg",
+            mode="lines+markers",
+            line=dict(color="#2962ff", width=2.5, dash="dot"),
+            marker=dict(size=6),
+        ))
+
+        # Regression trend line
+        trend_y = model.predict(X)
+        fig_ml.add_trace(go.Scatter(
+            x=player_matches["match_no"],
+            y=trend_y.round(1),
+            name="Trend (Linear Regression)",
+            mode="lines",
+            line=dict(color="#e53935", width=2),
+        ))
+
+        # Predicted next match point
+        fig_ml.add_trace(go.Scatter(
+            x=[next_match_no],
+            y=[predicted_runs],
+            name=f"Predicted Match #{next_match_no}",
+            mode="markers",
+            marker=dict(size=16, color="#00e676", symbol="star"),
+        ))
+
+        fig_ml.update_layout(
+            plot_bgcolor=DARK_BG,
+            paper_bgcolor=DARK_BG,
+            font_color=TEXT_COLOR,
+            margin=dict(t=40, b=40, l=40, r=40),
+            xaxis_title="Match No",
+            yaxis_title="Runs",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig_ml, use_container_width=True)
+
+        # ── Match history table ──────────────────────────────────────────
+        with st.expander(f"Match History — {ml_player}"):
+            display_df = player_matches[["match_no", "runs", "rolling_avg"]].copy()
+            display_df.columns = ["Match No", "Runs", "3-Match Rolling Avg"]
+            st.dataframe(display_df.set_index("Match No"), use_container_width=True)
